@@ -3,8 +3,8 @@ import 'package:nfc_manager/nfc_manager.dart';
 import '../models/gate_response.dart';
 import '../services/api_services.dart';
 import '../services/pin_service.dart';
-import 'linking_screen.dart';
 import 'debug_screen.dart';
+import 'linking_screen.dart';
 
 class DailyGateScreen extends StatefulWidget {
   const DailyGateScreen({super.key});
@@ -25,24 +25,19 @@ class _DailyGateScreenState extends State<DailyGateScreen> {
   @override
   void initState() {
     super.initState();
-    print("🟢 [DailyGate] Screen Initialized");
-    
-    // 🔥 START THE INTELLIGENT AUTOMATION
+    // 🔥 START THE AUTOMATIC ENGINES
     ApiService.startBackgroundServices();
-
     _startNFC();
   }
   
   @override
   void dispose() {
-    // Stop NFC when switching tabs
     NfcManager.instance.stopSession();
     super.dispose();
   }
 
   void _startNFC() async {
-    bool isAvailable = await NfcManager.instance.isAvailable();
-    if (!isAvailable) {
+    if (!(await NfcManager.instance.isAvailable())) {
       if(mounted) setState(() => _message = "NFC OFF");
       return;
     }
@@ -62,14 +57,12 @@ class _DailyGateScreenState extends State<DailyGateScreen> {
         _isProcessing = true;
 
         try {
-          // Send "PRIVACY" mode so we don't flash fees on the big screen
-          print("🚀 [DailyGate] Tapped: $uid");
+          // ⚡ LOCAL TAP (No Internet Wait)
           final res = await ApiService.handleTap(uid, "PRIVACY");
           if (!mounted) return;
           _lastScannedUid = uid;
           _updateUI(res);
         } catch (_) {
-          // Ignore crashes, keep scanning
         } finally {
           _isProcessing = false;
         }
@@ -85,20 +78,13 @@ class _DailyGateScreenState extends State<DailyGateScreen> {
           _subMessage = res.error!;
           _icon = Icons.error_outline;
       } else {
-        // ✅ ONLINE: CHECK IN
-        if (res.status == "CHECK_IN") {
+        // ✅ CHECK IN (Local or Online)
+        if (res.status == "CHECK_IN" || res.status == "OFFLINE_LOG") {
           _bgColor = Colors.green.shade100;
           _message = "WELCOME IN";
           _subMessage = "${res.name}\nChecked In";
           _icon = Icons.login;
         } 
-        // 💜 OFFLINE: SAVED TO QUEUE
-        else if (res.status == "OFFLINE_LOG") {
-          _bgColor = Colors.purple.shade100;
-          _message = "SAVED (OFFLINE)";
-          _subMessage = "${res.name}\nLog saved to queue.";
-          _icon = Icons.save_alt;
-        }
         // 🕒 ALREADY LOGGED (13-Hour Rule)
         else if (res.status == "ALREADY LOGGED") {
           _bgColor = Colors.grey.shade400;
@@ -109,7 +95,6 @@ class _DailyGateScreenState extends State<DailyGateScreen> {
       }
     });
 
-    // Reset screen after 3 seconds
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted && _message != "READY TO SCAN") {
         setState(() {
@@ -142,13 +127,14 @@ class _DailyGateScreenState extends State<DailyGateScreen> {
              decoration: const InputDecoration(hintText: "PIN"),
           ),
           actions: [
+             // 📊 STATS BUTTON
              TextButton.icon(
-               icon: const Icon(Icons.bug_report, color: Colors.orange),
-               label: const Text("DIAGNOSTICS"),
+               icon: const Icon(Icons.bar_chart, color: Colors.blue),
+               label: const Text("STATS"),
                onPressed: () {
                  if (pinController.text == correctPin) {
                     Navigator.pop(ctx);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const DebugScreen()));
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const StatsScreen()));
                  }
                },
              ),

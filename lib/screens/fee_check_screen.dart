@@ -15,6 +15,7 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
   String _name = "Tap to Check Balance";
   String? _balanceMsg;
   String? _warning;
+  String? _subStatus; // 🆕 To show "Already In" nicely
 
   Color _bgColor = Colors.orange.shade50;
   Color _cardColor = Colors.white;
@@ -28,6 +29,12 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
     _startNFC();
   }
 
+  @override
+  void dispose() {
+    NfcManager.instance.stopSession();
+    super.dispose();
+  }
+
   void _startNFC() async {
     if (!(await NfcManager.instance.isAvailable())) {
       print("❌ [FeeCheck] NFC Not Available");
@@ -38,9 +45,7 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
 
     NfcManager.instance.startSession(
       onDiscovered: (NfcTag tag) async {
-        print("✅ [FeeCheck] Tag Discovered");
-
-        // 🛠️ OLD STYLE (3.5.0 Compatible)
+        // 🛠️ 3.5.0 Compatible Logic
         var id = tag.data['nfca']?['identifier'] ?? 
                  tag.data['mifare']?['identifier'] ??
                  tag.data['isodep']?['identifier'];
@@ -58,6 +63,10 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
 
         try {
           print("🚀 [FeeCheck] Requesting Fee Status...");
+          
+          // We call handleTap. 
+          // 1. If new, it marks attendance & returns balance.
+          // 2. If blocked (13h rule), it returns ALREADY_LOGGED & returns balance.
           final res = await ApiService.handleTap(uid, "FEES");
           
           print("📩 [FeeCheck] Balance Received: ${res.balance}");
@@ -75,18 +84,27 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
   }
 
   void _updateUI(GateResponse res) {
-    print("🎨 [FeeCheck] Updating UI -> Balance: ${res.balance}, Warning: ${res.warning}");
+    print("🎨 [FeeCheck] Updating UI -> Balance: ${res.balance}, Status: ${res.status}");
 
     setState(() {
-      if (res.error != null) {
+      // 🚨 ERROR LOGIC:
+      // Show error ONLY if it's a real error (like unknown card).
+      // We IGNORE "ALREADY LOGGED" because we still want to see the fees.
+      if (res.error != null && res.status != "ALREADY LOGGED") {
           _bgColor = Colors.grey.shade300;
           _status = "ERROR";
           _name = res.error!;
           _balanceMsg = null;
           _warning = null;
+          _subStatus = null;
       } else {
+        // ✅ SUCCESS (Or Already Logged)
         _name = res.name ?? "Student";
+        _subStatus = (res.status == "ALREADY LOGGED") ? "(Already Checked In)" : null;
+
+        // 💰 FEE LOGIC
         if (res.warning != null || (res.balance != null && res.balance! > 0)) {
+          // 🔴 OWING
           _bgColor = Colors.red.shade100;
           _cardColor = Colors.red.shade50;
           _status = "OWING";
@@ -94,6 +112,7 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
           _warning = "PLEASE CLEAR FEES";
           print("⚠️ [FeeCheck] Student is OWING!");
         } else {
+          // 🔵 CLEARED
           _bgColor = Colors.blue.shade50;
           _cardColor = Colors.white;
           _status = "CLEARED";
@@ -113,6 +132,7 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
           _name = "Tap to Check Balance";
           _balanceMsg = null;
           _warning = null;
+          _subStatus = null;
           _bgColor = Colors.orange.shade50;
           _cardColor = Colors.white;
           _lastScannedUid = null;
@@ -152,6 +172,7 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // STATUS BADGE
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 25,
@@ -172,7 +193,19 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 40),
+              
+              const SizedBox(height: 10),
+              
+              // SUB-STATUS (Already In)
+              if (_subStatus != null)
+                Text(
+                  _subStatus!,
+                  style: TextStyle(color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                ),
+
+              const SizedBox(height: 30),
+              
+              // NAME
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 child: Text(
@@ -184,7 +217,10 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
                   ),
                 ),
               ),
+              
               const SizedBox(height: 20),
+              
+              // BALANCE
               if (_balanceMsg != null)
                 Text(
                   _balanceMsg!,
@@ -194,6 +230,8 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
                     color: Colors.blue.shade800,
                   ),
                 ),
+              
+              // WARNING
               if (_warning != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 25),

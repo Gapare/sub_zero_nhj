@@ -5,167 +5,146 @@ import '../models/gate_response.dart';
 import 'offline_service.dart';
 
 class ApiService {
-  // ⚠️ CHANGE THIS IP TO YOUR SERVER IF DEPLOYED
   static const String _domain = "https://njelele.ac.zw/api/gateapi";
-  
   static String gateUrl = "$_domain/gate";
   static String syncUrl = "$_domain/sync";
 
   // ==================================================
-  // 🤖 AUTOMATION ENGINE
+  // ⚙️ AUTOMATION ENGINE (The Heavy Lifter)
   // ==================================================
   static Timer? _uploadTimer;
   static Timer? _downloadTimer;
 
   static void startBackgroundServices() {
-    print("🤖 AUTO: Starting Background Services...");
+    print("🤖 AUTO: Starting Background Engines...");
 
-    // 1. Run immediately on app start
+    // 1. Run immediately on start
     _pushQueueToServer();
     downloadDatabase();
 
-    // 2. Upload Queue every 2 minutes (Fast Sync)
-    _uploadTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
+    // 2. ⚡ FAST SYNC: Upload Queue every 30 Seconds
+    _uploadTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       _pushQueueToServer();
     });
 
-    // 3. Download Student List every 60 minutes (Slow Sync)
+    // 3. 🐢 SLOW SYNC: Download Students every 60 Minutes
     _downloadTimer = Timer.periodic(const Duration(minutes: 60), (timer) {
       downloadDatabase();
     });
   }
 
-  // The hidden function that uploads the queue
+  // The Silent Uploader
   static Future<void> _pushQueueToServer() async {
     List<Map<String, dynamic>> queue = await OfflineService.getQueue();
     if (queue.isEmpty) return;
 
-    print("☁️ AUTO-UPLOAD: Attempting to send ${queue.length} logs...");
+    print("☁️ UPLOAD: Found ${queue.length} logs to sync...");
 
     try {
       List<Map<String, dynamic>> successItems = [];
 
       for (var item in queue) {
-        final response = await http.post(
-          Uri.parse(gateUrl),
-          headers: {"Content-Type": "application/json"},
-          body: jsonEncode({
-            "action": "TAP",
-            "nfcUid": item['nfcUid'],
-            "mode": item['mode'],
-          }),
-        ).timeout(const Duration(seconds: 5));
+        final response = await http
+            .post(
+              Uri.parse(gateUrl),
+              headers: {"Content-Type": "application/json"},
+              body: jsonEncode({
+                "action": "TAP",
+                "nfcUid": item['nfcUid'],
+                "mode": item['mode'],
+                "timestamp": item['time'], // Ensure timestamp is sent
+              }),
+            )
+            .timeout(const Duration(seconds: 5));
 
-        // Accept 200 (OK)
         if (response.statusCode == 200) {
           successItems.add(item);
         }
       }
 
-      // Remove successful uploads from phone memory
       if (successItems.isNotEmpty) {
         await OfflineService.removeFromQueue(successItems);
-        print("✅ AUTO-UPLOAD: Successfully sent ${successItems.length} logs.");
+        print("✅ UPLOAD: Synced ${successItems.length} logs successfully.");
       }
-
     } catch (e) {
-      print("☁️ AUTO-UPLOAD PAUSED: Network Error");
+      print("☁️ UPLOAD PAUSED: No connection.");
     }
   }
 
-  // ==================================================
-  // 📡 TAP HANDLER (Smart Hybrid)
-  // ==================================================
-
-  static Future<GateResponse> handleTap(String nfcUid, String mode) async {
-    // 🧠 1. CHECK LOCAL RULES FIRST (The 13-Hour Rule)
-    bool isAllowed = await OfflineService.isCoolToTap(nfcUid);
-    
-    if (!isAllowed) {
-       GateResponse? local = await OfflineService.findStudent(nfcUid);
-       return GateResponse(
-         name: local?.name ?? "Student",
-         status: "ALREADY LOGGED", // Matches backend logic
-         error: "Already clocked in (13h Rule)",
-         isOffline: true,
-         img: local?.img
-       );
-    }
-
-    // 📡 2. TRY ONLINE
+  // The Silent Downloader
+  static Future<void> downloadDatabase() async {
     try {
-      final response = await http.post(
-        Uri.parse(gateUrl),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "action": "TAP",
-          "nfcUid": nfcUid,
-          "mode": mode, 
-        }),
-      ).timeout(const Duration(seconds: 4));
-
-      if (response.statusCode == 200) {
-        // Record it locally so we don't double tap offline later
-        await OfflineService.recordTapLocally(nfcUid);
-        return GateResponse.fromJson(jsonDecode(response.body));
-      } else {
-        throw Exception("Server Error");
-      }
-    } catch (e) {
-      // 🔌 3. OFFLINE FALLBACK
-      print("⚠️ OFFLINE MODE: Switching to local data.");
-      
-      GateResponse? localStudent = await OfflineService.findStudent(nfcUid);
-      
-      if (localStudent != null) {
-         await OfflineService.addToQueue(nfcUid, mode);
-         
-         return GateResponse(
-           name: localStudent.name,
-           status: "OFFLINE_LOG",
-           balance: localStudent.balance,
-           warning: localStudent.warning,
-           img: localStudent.img,
-           isOffline: true,
-           className: localStudent.className,
-         );
-      }
-
-      return GateResponse(error: "Connection Failed & Not Found");
-    }
-  }
-
-  // ==================================================
-  // 🛠️ UTILS (Sync, WhoAmI, Link)
-  // ==================================================
-
-  static Future<String> downloadDatabase() async {
-    try {
-      print("🔄 AUTO-SYNC: Connecting to $syncUrl...");
+      print("🔄 DOWNLOAD: Fetching student list...");
       final response = await http.get(Uri.parse(syncUrl));
 
       if (response.statusCode == 200) {
-        List<dynamic> list = jsonDecode(response.body);
-        List<GateResponse> students = list.map((json) => GateResponse.fromJson(json)).toList();
-        await OfflineService.saveStudents(students);
-        print("✅ AUTO-SYNC: Updated ${students.length} students.");
-        return "Success";
+        // Pass the raw string to OfflineService.
+        // It will use a separate thread (Isolate) to parse it.
+        await OfflineService.saveStudents(response.body);
+        print("✅ DOWNLOAD: List updated successfully.");
       }
-      return "Error";
     } catch (e) {
-      print("❌ AUTO-SYNC FAILED: $e");
-      return "Failed";
+      print("❌ DOWNLOAD FAILED: $e");
     }
   }
 
+  // ==================================================
+  // ⚡ SPEED MODE TAP (100% Local)
+  // ==================================================
+  static Future<GateResponse> handleTap(String nfcUid, String mode) async {
+    // 1. 🔍 INSTANT LOOKUP (0.01s)
+    GateResponse? student = await OfflineService.findStudent(nfcUid);
+
+    if (student == null) {
+      return GateResponse(error: "Unknown Card (Wait for Sync)");
+    }
+
+    // 2. 🧠 CHECK 13-HOUR RULE (Locally)
+    bool isAllowed = await OfflineService.isCoolToTap(nfcUid);
+
+    if (!isAllowed) {
+      // 🛑 RETURN "ALREADY LOGGED" BUT INCLUDE BALANCE!
+      return GateResponse(
+        name: student.name,
+        status: "ALREADY LOGGED",
+        error: "Entered Recently",
+        isOffline: true,
+        img: student.img,
+        className: student.className,
+        sex: student.sex,
+
+        // 👇 CRITICAL UPDATE: Pass financial data even if blocked
+        balance: student.balance,
+        warning: student.warning,
+      );
+    }
+
+    // 3. 💾 SAVE TO QUEUE (Background Thread will handle upload)
+    await OfflineService.addToQueue(nfcUid, mode);
+
+    // 4. ✅ RETURN SUCCESS INSTANTLY
+    return GateResponse(
+      name: student.name,
+      status: "CHECK_IN", // We assume Check-In for speed
+      balance: student.balance,
+      warning: student.warning,
+      img: student.img,
+      className: student.className,
+      sex: student.sex,
+      isOffline: true,
+    );
+  }
+
   static Future<GateResponse> whoAmI(String nfcUid) async {
-     try {
-      final response = await http.post(
-        Uri.parse(gateUrl),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"action": "WHOAMI", "nfcUid": nfcUid}),
-      ).timeout(const Duration(seconds: 4));
-      
+    try {
+      final response = await http
+          .post(
+            Uri.parse(gateUrl),
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode({"action": "WHOAMI", "nfcUid": nfcUid}),
+          )
+          .timeout(const Duration(seconds: 4));
+
       if (response.statusCode == 200) {
         return GateResponse.fromJson(jsonDecode(response.body));
       } else {
@@ -177,13 +156,17 @@ class ApiService {
       return GateResponse(error: "Scan Failed");
     }
   }
-  
+
   static Future<String> linkCard(String adm, String nfcUid) async {
     try {
       final response = await http.post(
         Uri.parse(gateUrl),
         headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"action": "LINK", "admissionNumber": adm, "nfcUid": nfcUid}),
+        body: jsonEncode({
+          "action": "LINK",
+          "admissionNumber": adm,
+          "nfcUid": nfcUid,
+        }),
       );
       final data = jsonDecode(response.body);
       return data['error'] ?? data['message'] ?? "Unknown response";

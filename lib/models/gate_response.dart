@@ -9,7 +9,8 @@ class GateResponse {
   final String? parentPhone;
   final String? img;
   final bool isOffline;
-  final String? rfidUid; // 🆕 Added so we can search locally
+  final String? rfidUid;
+  final String? sex; 
 
   GateResponse({
     this.name,
@@ -23,6 +24,7 @@ class GateResponse {
     this.img,
     this.isOffline = false,
     this.rfidUid,
+    this.sex,
   });
 
   factory GateResponse.fromJson(Map<String, dynamic> json) {
@@ -38,10 +40,10 @@ class GateResponse {
       img: json['img'],
       isOffline: json['isOffline'] ?? false,
       rfidUid: json['rfidUid'],
+      sex: json['sex'], // 👈 Read it here
     );
   }
 
-  // 🆕 METHOD: Converts Object back to JSON for saving
   Map<String, dynamic> toJson() {
     return {
       'name': name,
@@ -53,8 +55,9 @@ class GateResponse {
       'parentName': parentName,
       'parentPhone': parentPhone,
       'img': img,
-      'isOffline': true, // Always mark as offline when saving
+      'isOffline': true,
       'rfidUid': rfidUid,
+      'sex': sex, // 👈 Save it here
     };
   }
 }
