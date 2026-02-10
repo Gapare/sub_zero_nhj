@@ -1,28 +1,19 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:nfc_manager/nfc_manager.dart';
+import 'package:telpo_m8/telpo_m8.dart';
 import 'screens/daily_gate_screen.dart';
 import 'screens/fee_check_screen.dart';
 import 'screens/identity_screen.dart';
-import 'services/api_services.dart'; // 👈 Added for background services
+import 'services/offline_service.dart';
 
-void main() {
-  // 1. SAFE STARTUP: Catch errors before the app even runs
-  runZonedGuarded(
-    () async {
-      WidgetsFlutterBinding.ensureInitialized();
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
-      // ⚠️ REMOVED: SystemChrome.setPreferredOrientations
-      // POS devices often crash if you try to force orientation.
+  // Settle Delay for Telpo Hardware Drivers
+  await Future.delayed(const Duration(milliseconds: 500));
 
-      runApp(const NjeleleApp());
-    },
-    (error, stack) {
-      // 2. GLOBAL ERROR CATCHER
-      // If the app crashes, this will print it to the screen/console
-      print("💥 CRITICAL ERROR: $error");
-    },
-  );
+  runApp(const NjeleleApp());
 }
 
 class NjeleleApp extends StatelessWidget {
@@ -32,16 +23,17 @@ class NjeleleApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Njelele Gate',
-      theme: ThemeData(primarySwatch: Colors.green, useMaterial3: true),
-      // 3. STARTUP CHECK: Don't go to Gate Screen immediately.
-      // Go to a safe "Boot" screen to test the hardware first.
+      title: 'Njelele Gate Pro',
+      theme: ThemeData(
+        primarySwatch: Colors.green,
+        useMaterial3: true,
+        brightness: Brightness.light,
+      ),
       home: const BootCheckScreen(),
     );
   }
 }
 
-// 🩺 A NEW SCREEN TO DIAGNOSE THE POS
 class BootCheckScreen extends StatefulWidget {
   const BootCheckScreen({super.key});
 
@@ -50,45 +42,51 @@ class BootCheckScreen extends StatefulWidget {
 }
 
 class _BootCheckScreenState extends State<BootCheckScreen> {
-  String _log = "Initializing...";
+  String _log = ">> FIKS_OS KERNEL INITIALIZED\n>> AUTHOR: ENGINEER GAPARE E.";
   bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
-    _runChecks();
+    _performSystemCheck();
   }
 
   void _logMsg(String msg) {
+    if (!mounted) return;
     setState(() => _log += "\n$msg");
-    print(msg);
   }
 
-  Future<void> _runChecks() async {
+  Future<void> _performSystemCheck() async {
     try {
-      // TEST 1: Storage
-      _logMsg("1. Checking Storage...");
-      await Future.delayed(const Duration(milliseconds: 500));
-      // (Simple shared_prefs check could go here if needed)
-      _logMsg("✅ Storage OK");
+      _logMsg(">> Loading System Modules...");
+      await Future.delayed(const Duration(milliseconds: 600));
 
-      // TEST 2: Internet
-      _logMsg("2. Checking Connectivity...");
-      // We skip actual internet check to prevent crashes, just ensuring async works
-      _logMsg("✅ Async Logic OK");
+      // 🛠️ Hardware Mapping
+      try {
+        final telpo = TelpoM8();
+        _logMsg("✅ Hardware Interface: MAPPED");
+      } catch (e) {
+        _logMsg("❌ Hardware Failure: Driver Not Found");
+        rethrow;
+      }
 
-      // TEST 3: NFC
-      _logMsg("3. Checking NFC Library...");
-      // We DON'T start scanning, just load the class to see if it crashes
-      _logMsg("✅ NFC Library Loaded");
+      // 🛰️ Network & Sync Engine
+      OfflineService.startSyncTimer();
+      _logMsg("✅ Sync Engine: ACTIVE");
 
-      // ⚡ START BACKGROUND ENGINES (The 2-Thread Engine)
-      _logMsg("4. Starting Background Engines...");
-      ApiService.startBackgroundServices();
-      _logMsg("✅ Engines Started");
+      // 💳 NFC Validation
+      bool isAvailable = await NfcManager.instance.isAvailable();
+      _logMsg(isAvailable ? "✅ NFC Module: ONLINE" : "⚠️ NFC Module: OFFLINE");
 
-      _logMsg("🚀 LAUNCHING APP IN 2 SECONDS...");
-      await Future.delayed(const Duration(seconds: 2));
+      // 🧠 Database Integrity
+      _logMsg(">> Synchronizing Local Brain...");
+      await OfflineService.autoSync();
+      _logMsg("✅ Database: READY");
+
+      _logMsg("\n>> BOOT SEQUENCE SUCCESSFUL.");
+      _logMsg(">> STARTING NJELELE_PRO UI...");
+
+      await Future.delayed(const Duration(seconds: 1));
 
       if (mounted) {
         Navigator.pushReplacement(
@@ -97,45 +95,85 @@ class _BootCheckScreenState extends State<BootCheckScreen> {
         );
       }
     } catch (e) {
-      setState(() {
-        _hasError = true;
-        _log += "\n\n❌ CRASH DETECTED:\n$e";
-      });
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _log += "\n\n[!] KERNEL PANIC: SYSTEM HALT [!]";
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _hasError ? Colors.red.shade50 : Colors.white,
-      body: Center(
+      backgroundColor: _hasError
+          ? const Color(0xFF1A0000)
+          : const Color(0xFF0A0A0A),
+      body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20.0),
+          padding: const EdgeInsets.all(32.0),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Text(
+                _hasError ? "HALT: BOOT_FAILURE" : "NJELELE SYSTEM V1.0",
+                style: TextStyle(
+                  color: _hasError ? Colors.redAccent : Colors.greenAccent,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  letterSpacing: 2.0,
+                ),
+              ),
+              const SizedBox(height: 25),
+              Expanded(
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    border: Border.all(
+                      color: _hasError
+                          ? Colors.red
+                          : Colors.greenAccent.withOpacity(0.3),
+                    ),
+                  ),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      _log,
+                      style: const TextStyle(
+                        color: Colors.greenAccent,
+                        fontFamily: 'monospace',
+                        fontSize: 13,
+                        height: 1.6,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               if (_hasError)
-                const Icon(Icons.error, color: Colors.red, size: 60)
-              else
-                const CircularProgressIndicator(),
-              const SizedBox(height: 20),
-              const Text(
-                "SYSTEM BOOT",
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(10),
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
-                  border: Border.all(color: Colors.grey),
+                Padding(
+                  padding: const EdgeInsets.only(top: 20),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade900,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _hasError = false;
+                          _log = ">> REBOOTING KERNEL...";
+                        });
+                        _performSystemCheck();
+                      },
+                      child: const Text(
+                        "RETRY KERNEL BOOT",
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
                 ),
-                child: Text(
-                  _log,
-                  style: const TextStyle(fontFamily: 'monospace'),
-                ),
-              ),
             ],
           ),
         ),
@@ -144,65 +182,40 @@ class _BootCheckScreenState extends State<BootCheckScreen> {
   }
 }
 
-// RESTORE YOUR MAIN NAVIGATION
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
-
   @override
   State<MainNavigation> createState() => _MainNavigationState();
 }
 
 class _MainNavigationState extends State<MainNavigation> {
-  int _selectedIndex = 0;
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
+  int _currentIndex = 0;
+  final List<Widget> _pages = [
+    const DailyGateScreen(),
+    const FeeCheckScreen(),
+    const IdentityScreen(),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    Widget activeScreen;
-
-    switch (_selectedIndex) {
-      case 0:
-        activeScreen = const DailyGateScreen();
-        break;
-      case 1:
-        activeScreen = const FeeCheckScreen();
-        break;
-      case 2:
-        activeScreen = const IdentityScreen();
-        break;
-      default:
-        activeScreen = const DailyGateScreen();
-    }
-
     return Scaffold(
-      body: activeScreen,
+      body: _pages[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
+        currentIndex: _currentIndex,
+        onTap: (index) => setState(() => _currentIndex = index),
+        selectedItemColor: Colors.green[800],
+        unselectedItemColor: Colors.grey.shade600,
+        backgroundColor: Colors.white,
+        elevation: 20,
+        type: BottomNavigationBarType.fixed,
+        items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.qr_code_scanner),
+            icon: Icon(Icons.security),
             label: 'Daily Gate',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.attach_money),
-            label: 'Fees',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.perm_identity),
-            label: 'Identity',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.payments), label: 'Fees'),
+          BottomNavigationBarItem(icon: Icon(Icons.badge), label: 'Identity'),
         ],
-        currentIndex: _selectedIndex,
-        selectedItemColor: Colors.green[800],
-        unselectedItemColor: Colors.grey,
-        onTap: _onItemTapped,
-        backgroundColor: Colors.white,
-        elevation: 10,
-        type: BottomNavigationBarType.fixed,
       ),
     );
   }

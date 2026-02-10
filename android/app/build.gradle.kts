@@ -5,13 +5,14 @@ plugins {
 }
 
 android {
-    namespace = "com.example.njelele_finance"
+    namespace = "com.example.sub_zero"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+
     }
 
     kotlinOptions {
@@ -19,17 +20,14 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.njelele_finance"
-        
-        // 🟢 FIX 1: NFC REQUIRES 21
-        minSdk = flutter.minSdkVersion 
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
-        
-        // 🟢 FIX 2: POS MEMORY FIX
-        multiDexEnabled = true 
-    }
+    applicationId = "com.example.sub_zero" // Try changing this to be safe
+    minSdk = 24       // Android 7.0+
+    targetSdk = 33    // Android 13
+    versionCode = flutter.versionCode
+    versionName = flutter.versionName
+
+    multiDexEnabled = true // ADD THIS LINE
+}
 
     buildTypes {
         release {

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:nfc_manager/nfc_manager.dart';
+import 'package:telpo_m8/telpo_m8.dart';
+import 'package:screenshot/screenshot.dart';
 import '../models/gate_response.dart';
-import '../services/api_services.dart';
+import '../services/offline_service.dart';
 
 class FeeCheckScreen extends StatefulWidget {
   const FeeCheckScreen({super.key});
@@ -15,17 +17,19 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
   String _name = "Tap to Check Balance";
   String? _balanceMsg;
   String? _warning;
-  String? _subStatus; // 🆕 To show "Already In" nicely
+  String? _subStatus;
 
   Color _bgColor = Colors.orange.shade50;
   Color _cardColor = Colors.white;
   bool _isProcessing = false;
   String? _lastScannedUid;
 
+  final TelpoM8 _telpo = TelpoM8();
+  final ScreenshotController _screenshotController = ScreenshotController();
+
   @override
   void initState() {
     super.initState();
-    print("💰 [FeeCheck] Screen Initialized");
     _startNFC();
   }
 
@@ -36,46 +40,33 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
   }
 
   void _startNFC() async {
-    if (!(await NfcManager.instance.isAvailable())) {
-      print("❌ [FeeCheck] NFC Not Available");
-      return;
-    }
-    
-    print("📡 [FeeCheck] NFC Session Started");
+    if (!(await NfcManager.instance.isAvailable())) return;
 
     NfcManager.instance.startSession(
       onDiscovered: (NfcTag tag) async {
-        // 🛠️ 3.5.0 Compatible Logic
-        var id = tag.data['nfca']?['identifier'] ?? 
-                 tag.data['mifare']?['identifier'] ??
-                 tag.data['isodep']?['identifier'];
+        var id =
+            tag.data['nfca']?['identifier'] ??
+            tag.data['mifare']?['identifier'] ??
+            tag.data['isodep']?['identifier'];
 
         if (id == null) return;
-        String uid = List<int>.from(id)
-            .map((e) => e.toRadixString(16).padLeft(2, '0'))
-            .join(':');
+        String uid = List<int>.from(
+          id,
+        ).map((e) => e.toRadixString(16).padLeft(2, '0')).join(':');
 
-        print("👉 [FeeCheck] Scanned UID: $uid");
-
-        if (uid == _lastScannedUid) return;
-        if (_isProcessing) return;
+        if (uid == _lastScannedUid || _isProcessing) return;
         _isProcessing = true;
 
         try {
-          print("🚀 [FeeCheck] Requesting Fee Status...");
-          
-          // We call handleTap. 
-          // 1. If new, it marks attendance & returns balance.
-          // 2. If blocked (13h rule), it returns ALREADY_LOGGED & returns balance.
-          final res = await ApiService.handleTap(uid, "FEES");
-          
-          print("📩 [FeeCheck] Balance Received: ${res.balance}");
-          
+          final res = await OfflineService.handleLocalTap(uid, "FEES");
+
           if (!mounted) return;
           _lastScannedUid = uid;
           _updateUI(res);
-        } catch (e) {
-          print("❌ [FeeCheck] Error: $e");
+          _updateSubLCD(res);
+
+          OfflineService.syncPendingTaps();
+        } catch (_) {
         } finally {
           _isProcessing = false;
         }
@@ -83,50 +74,87 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
     );
   }
 
+  Future<void> _updateSubLCD(GateResponse res) async {
+    try {
+      bool isOwing =
+          res.warning != null || (res.balance != null && res.balance! > 0);
+
+      final bytes = await _screenshotController.captureFromWidget(
+        Container(
+          width: 240,
+          height: 120,
+          color: isOwing ? Colors.red.shade900 : Colors.blue.shade900,
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                (res.name ?? "STUDENT").toUpperCase(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+              const Divider(color: Colors.white54),
+              Text(
+                isOwing
+                    ? "OWING: \$${res.balance?.toStringAsFixed(2)}"
+                    : "FEES: CLEARED",
+                style: TextStyle(
+                  color: isOwing ? Colors.yellow : Colors.greenAccent,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              if (isOwing)
+                const Text(
+                  "PLEASE VISIT FINANCE",
+                  style: TextStyle(color: Colors.white, fontSize: 10),
+                ),
+            ],
+          ),
+        ),
+      );
+
+      await _telpo.displayImageOnLCD(bytes);
+    } catch (_) {}
+  }
+
   void _updateUI(GateResponse res) {
-    print("🎨 [FeeCheck] Updating UI -> Balance: ${res.balance}, Status: ${res.status}");
-
     setState(() {
-      // 🚨 ERROR LOGIC:
-      // Show error ONLY if it's a real error (like unknown card).
-      // We IGNORE "ALREADY LOGGED" because we still want to see the fees.
       if (res.error != null && res.status != "ALREADY LOGGED") {
-          _bgColor = Colors.grey.shade300;
-          _status = "ERROR";
-          _name = res.error!;
-          _balanceMsg = null;
-          _warning = null;
-          _subStatus = null;
+        _bgColor = Colors.grey.shade300;
+        _status = "ERROR";
+        _name = res.error!;
+        _balanceMsg = null;
+        _warning = null;
+        _subStatus = null;
       } else {
-        // ✅ SUCCESS (Or Already Logged)
         _name = res.name ?? "Student";
-        _subStatus = (res.status == "ALREADY LOGGED") ? "(Already Checked In)" : null;
+        _subStatus = (res.status == "ALREADY LOGGED")
+            ? "(Already Checked In)"
+            : null;
 
-        // 💰 FEE LOGIC
         if (res.warning != null || (res.balance != null && res.balance! > 0)) {
-          // 🔴 OWING
           _bgColor = Colors.red.shade100;
           _cardColor = Colors.red.shade50;
           _status = "OWING";
           _balanceMsg = "Balance: \$${res.balance?.toStringAsFixed(2)}";
           _warning = "PLEASE CLEAR FEES";
-          print("⚠️ [FeeCheck] Student is OWING!");
         } else {
-          // 🔵 CLEARED
           _bgColor = Colors.blue.shade50;
           _cardColor = Colors.white;
           _status = "CLEARED";
           _balanceMsg = "Fees: Paid";
           _warning = null;
-          print("✅ [FeeCheck] Student is CLEARED");
         }
       }
     });
 
-    // Reset UI after 5 seconds
     Future.delayed(const Duration(seconds: 5), () {
       if (mounted && _status != "WAITING...") {
-        print("🔄 [FeeCheck] Auto-resetting screen");
         setState(() {
           _status = "WAITING...";
           _name = "Tap to Check Balance";
@@ -137,8 +165,32 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
           _cardColor = Colors.white;
           _lastScannedUid = null;
         });
+        _clearSubLCD();
       }
     });
+  }
+
+  Future<void> _clearSubLCD() async {
+    try {
+      final bytes = await _screenshotController.captureFromWidget(
+        Container(
+          width: 240,
+          height: 120,
+          color: Colors.black,
+          child: const Center(
+            child: Text(
+              "NJELELE FINANCE",
+              style: TextStyle(
+                color: Colors.orange,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      );
+      await _telpo.displayImageOnLCD(bytes);
+    } catch (_) {}
   }
 
   @override
@@ -172,7 +224,6 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // STATUS BADGE
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 25,
@@ -193,19 +244,16 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
                   ),
                 ),
               ),
-              
               const SizedBox(height: 10),
-              
-              // SUB-STATUS (Already In)
               if (_subStatus != null)
                 Text(
                   _subStatus!,
-                  style: TextStyle(color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                  style: const TextStyle(
+                    color: Colors.grey,
+                    fontStyle: FontStyle.italic,
+                  ),
                 ),
-
               const SizedBox(height: 30),
-              
-              // NAME
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 child: Text(
@@ -217,10 +265,7 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
                   ),
                 ),
               ),
-              
               const SizedBox(height: 20),
-              
-              // BALANCE
               if (_balanceMsg != null)
                 Text(
                   _balanceMsg!,
@@ -230,8 +275,6 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
                     color: Colors.blue.shade800,
                   ),
                 ),
-              
-              // WARNING
               if (_warning != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 25),

@@ -304,6 +304,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.3"
+  screenshot:
+    dependency: "direct main"
+    description:
+      name: screenshot
+      sha256: "63817697a7835e6ce82add4228e15d233b74d42975c143ad8cfe07009fab866b"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.0"
   shared_preferences:
     dependency: "direct main"
     description:
@@ -397,6 +405,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.1"
+  telpo_m8:
+    dependency: "direct main"
+    description:
+      name: telpo_m8
+      sha256: "7622e6feae74752d9452c1e281bb6384c28d8a7e3606a5dcf68c0180fceeb232"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.9"
   term_glyph:
     dependency: transitive
     description:

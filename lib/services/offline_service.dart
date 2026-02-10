@@ -1,177 +1,118 @@
+import 'dart:async'; // 🔥 Added for Timer
 import 'dart:convert';
-import 'package:flutter/foundation.dart'; // For compute()
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import '../models/gate_response.dart';
-
-// 🧵 BACKGROUND WORKER: Parses JSON on a separate thread (The "2nd Thread")
-List<GateResponse> parseStudentsInIsolate(String responseBody) {
-  final List<dynamic> parsed = jsonDecode(responseBody);
-  return parsed
-      .map<GateResponse>((json) => GateResponse.fromJson(json))
-      .toList();
-}
+import 'api_services.dart';
 
 class OfflineService {
-  static const String _studentsKey = 'offline_students';
-  static const String _queueKey = 'offline_queue';
-  static const String _lastTapKey = 'last_tap_timestamps';
+  static const String _studentKey = "local_students";
+  static const String _pendingKey = "pending_taps";
+  static const String _lastSyncKey = "last_sync_date";
 
-  // ==================================================
-  // 📥 PART 1: STORAGE & PARSING
-  // ==================================================
+  static Timer? _syncTimer; // 🔥 The Heartbeat
 
-  // Save Students (Using Isolate to prevent UI Freeze)
-  static Future<void> saveStudents(String jsonString) async {
-    // 🧵 Run parsing in a background thread
-    List<GateResponse> students = await compute(
-      parseStudentsInIsolate,
-      jsonString,
+  // 🚀 START THE 13-SECOND HEARTBEAT
+  // Call this in your main.dart or DailyGateScreen initState
+  static void startSyncTimer() {
+    if (_syncTimer?.isActive ?? false) return;
+
+    print("⏲️ [Offline] 13-Second Heartbeat Started");
+    _syncTimer = Timer.periodic(const Duration(seconds: 13), (timer) {
+      syncPendingTaps();
+    });
+  }
+
+  static void stopSyncTimer() {
+    _syncTimer?.cancel();
+  }
+
+  static Future<void> autoSync() async {
+    final prefs = await SharedPreferences.getInstance();
+    String today = DateTime.now().toIso8601String().split('T')[0];
+    String? lastSync = prefs.getString(_lastSyncKey);
+
+    if (lastSync != today || DateTime.now().hour == 6) {
+      try {
+        final response = await http.get(
+          Uri.parse("https://njelele.ac.zw/api/gateapi/sync"),
+        );
+        if (response.statusCode == 200) {
+          await prefs.setString(_studentKey, response.body);
+          await prefs.setString(_lastSyncKey, today);
+          print("✅ [Offline] Auto-Sync Success");
+        }
+      } catch (e) {
+        print("❌ [Offline] Auto-Sync Failed: $e");
+      }
+    }
+    syncPendingTaps();
+  }
+
+  static Future<GateResponse> handleLocalTap(String uid, String mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    String? data = prefs.getString(_studentKey);
+    if (data == null) return GateResponse(error: "Please Sync Database");
+
+    List<dynamic> students = jsonDecode(data);
+    final student = students.firstWhere(
+      (s) => s['rfidUid'] == uid,
+      orElse: () => null,
     );
 
-    final prefs = await SharedPreferences.getInstance();
-    // We save the raw string to save time
-    await prefs.setString(_studentsKey, jsonString);
-    print("💾 STORAGE: Saved ${students.length} students to local DB.");
-  }
+    if (student == null) return GateResponse(error: "Card Not Registered");
 
-  // Find Student (Instant Lookup)
-  static Future<GateResponse?> findStudent(String nfcUid) async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? data = prefs.getString(_studentsKey);
-    if (data == null) return null;
-
-    // We decode on the fly for single lookups (fast enough)
-    final List<dynamic> jsonList = jsonDecode(data);
-    try {
-      final studentJson = jsonList.firstWhere(
-        (s) => s['rfidUid'] == nfcUid,
-        orElse: () => null,
-      );
-      if (studentJson != null) return GateResponse.fromJson(studentJson);
-    } catch (e) {}
-    return null;
-  }
-
-  // ==================================================
-  // 🧠 PART 2: THE 13-HOUR RULE (LOCAL)
-  // ==================================================
-
-  // Returns TRUE if allowed to tap (passed 13 hours since last tap)
-  static Future<bool> isCoolToTap(String nfcUid) async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? jsonStr = prefs.getString(_lastTapKey);
-    Map<String, dynamic> lastTaps = jsonStr != null ? jsonDecode(jsonStr) : {};
-
-    if (lastTaps.containsKey(nfcUid)) {
-      DateTime lastTime = DateTime.parse(lastTaps[nfcUid]);
-      Duration diff = DateTime.now().difference(lastTime);
-
-      // If less than 13 hours, BLOCK THEM
-      if (diff.inHours < 13) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  // Record a tap locally
-  static Future<void> recordTapLocally(String nfcUid) async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? jsonStr = prefs.getString(_lastTapKey);
-    Map<String, dynamic> lastTaps = jsonStr != null ? jsonDecode(jsonStr) : {};
-
-    lastTaps[nfcUid] = DateTime.now().toIso8601String();
-
-    await prefs.setString(_lastTapKey, jsonEncode(lastTaps));
-  }
-
-  // ==================================================
-  // 📤 PART 3: THE QUEUE (BUFFER)
-  // ==================================================
-
-  static Future<void> addToQueue(String nfcUid, String mode) async {
-    // Double check locally before queueing
-    bool allowed = await isCoolToTap(nfcUid);
-    if (!allowed) return;
-
-    final prefs = await SharedPreferences.getInstance();
-    List<String> queue = prefs.getStringList(_queueKey) ?? [];
-
-    final scanData = jsonEncode({
-      "nfcUid": nfcUid,
+    List<String> pending = prefs.getStringList(_pendingKey) ?? [];
+    String tapJson = jsonEncode({
+      "nfcUid": uid,
       "mode": mode,
-      "time": DateTime.now().toIso8601String(),
+      "timestamp": DateTime.now().toIso8601String(),
     });
 
-    queue.add(scanData);
-    await prefs.setStringList(_queueKey, queue);
+    pending.add(tapJson);
+    await prefs.setStringList(_pendingKey, pending);
 
-    // Mark as present locally immediately
-    await recordTapLocally(nfcUid);
+    // 🔥 Don't wait! Try a priority sync for THIS tap immediately
+    _syncSingleTap(tapJson);
 
-    print("📝 QUEUE: Added $nfcUid. Queue size: ${queue.length}");
+    return GateResponse(
+      name: student['name'],
+      balance: (student['balance'] as num?)?.toDouble(),
+      warning: student['warning'],
+      status: "CHECK_IN",
+    );
   }
 
-  static Future<List<Map<String, dynamic>>> getQueue() async {
+  // ☁️ PARALLEL BACKGROUND SYNC
+  static Future<void> syncPendingTaps() async {
     final prefs = await SharedPreferences.getInstance();
-    List<String> queue = prefs.getStringList(_queueKey) ?? [];
-    return queue.map((e) => jsonDecode(e) as Map<String, dynamic>).toList();
+    List<String> pending = prefs.getStringList(_pendingKey) ?? [];
+    if (pending.isEmpty) return;
+
+    print("🚀 [TurboSync] Pushing ${pending.length} taps to Vercel...");
+
+    // Map all pending taps to Future tasks and run them in parallel
+    await Future.wait(pending.map((tapJson) => _syncSingleTap(tapJson)));
   }
 
-  static Future<void> removeFromQueue(
-    List<Map<String, dynamic>> uploadedItems,
-  ) async {
-    final prefs = await SharedPreferences.getInstance();
-    List<String> currentQueue = prefs.getStringList(_queueKey) ?? [];
-    Set<String> itemsToRemove = uploadedItems.map((e) => jsonEncode(e)).toSet();
-    currentQueue.removeWhere((itemStr) => itemsToRemove.contains(itemStr));
-    await prefs.setStringList(_queueKey, currentQueue);
-  }
+  static Future<void> _syncSingleTap(String tapJson) async {
+    var tap = jsonDecode(tapJson);
+    try {
+      final res = await ApiService.handleTap(tap['nfcUid'], tap['mode']);
 
-  // ==================================================
-  // 📊 PART 4: REAL-TIME STATS CALCULATOR
-  // ==================================================
-  static Future<Map<String, dynamic>> getLiveStats() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final String? data = prefs.getString(_studentsKey);
-    if (data == null) return {};
-    List<dynamic> allStudents = jsonDecode(data);
-
-    final String? jsonStr = prefs.getString(_lastTapKey);
-    Map<String, dynamic> lastTaps = jsonStr != null ? jsonDecode(jsonStr) : {};
-
-    int malesPresent = 0;
-    int femalesPresent = 0;
-    Map<String, int> classCounts = {};
-    int totalPresent = 0;
-
-    // Iterate through all students to check who is present
-    for (var s in allStudents) {
-      String uid = s['rfidUid'] ?? "";
-      String gender = s['sex'] ?? "Unknown";
-      String className = s['class'] ?? "Unknown";
-
-      if (lastTaps.containsKey(uid)) {
-        DateTime lastTime = DateTime.parse(lastTaps[uid]);
-        Duration diff = DateTime.now().difference(lastTime);
-
-        // PRESENT if tapped < 13 hours ago
-        if (diff.inHours < 13) {
-          totalPresent++;
-          if (gender.toLowerCase().startsWith('m')) malesPresent++;
-          if (gender.toLowerCase().startsWith('f')) femalesPresent++;
-          classCounts[className] = (classCounts[className] ?? 0) + 1;
-        }
+      // If server accepts it (Success or Already In), remove from local list
+      if (res.error == null || res.status == "ALREADY LOGGED") {
+        await _removeTapFromPending(tapJson);
       }
+    } catch (e) {
+      // Keep it in pending if internet fails
     }
+  }
 
-    return {
-      "total_students": allStudents.length,
-      "total_present": totalPresent,
-      "males_present": malesPresent,
-      "females_present": femalesPresent,
-      "class_breakdown": classCounts,
-    };
+  static Future<void> _removeTapFromPending(String tapJson) async {
+    final prefs = await SharedPreferences.getInstance();
+    List<String> pending = prefs.getStringList(_pendingKey) ?? [];
+    pending.remove(tapJson);
+    await prefs.setStringList(_pendingKey, pending);
   }
 }

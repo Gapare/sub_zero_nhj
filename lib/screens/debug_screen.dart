@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../services/offline_service.dart';
 import '../services/api_services.dart';
 
 class StatsScreen extends StatefulWidget {
@@ -21,16 +20,18 @@ class _StatsScreenState extends State<StatsScreen> {
 
   void _loadStats() async {
     setState(() => _isLoading = true);
-    final data = await OfflineService.getLiveStats();
+    //final data = await OfflineService.getLiveStats();
     setState(() {
-      _stats = data;
+      _stats = {};
       _isLoading = false;
     });
   }
 
   void _runSync() async {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Force syncing...")));
-    await ApiService.downloadDatabase();
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text("Force syncing...")));
+    ApiService();
     _loadStats();
   }
 
@@ -56,65 +57,107 @@ class _StatsScreenState extends State<StatsScreen> {
           IconButton(
             icon: const Icon(Icons.download, color: Colors.green),
             onPressed: _runSync,
-          )
+          ),
         ],
       ),
-      body: _isLoading 
-        ? const Center(child: CircularProgressIndicator()) 
-        : SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                // 🏆 BIG TOTAL CARD
-                _buildStatCard(
-                  "Total Present", 
-                  "$present / $total", 
-                  Icons.people, 
-                  Colors.blue
-                ),
-                
-                const SizedBox(height: 15),
-
-                // 🚻 GENDER ROW
-                Row(
-                  children: [
-                    Expanded(child: _buildStatCard("Males", "$males", Icons.male, Colors.blueGrey)),
-                    const SizedBox(width: 15),
-                    Expanded(child: _buildStatCard("Females", "$females", Icons.female, Colors.pinkAccent)),
-                  ],
-                ),
-
-                const SizedBox(height: 25),
-                const Text("CLASS BREAKDOWN", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
-                const SizedBox(height: 10),
-
-                // 🏫 CLASS LIST
-                ...classes.entries.map((e) => Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.class_, color: Colors.green),
-                    title: Text(e.key),
-                    trailing: Text("${e.value}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  // 🏆 BIG TOTAL CARD
+                  _buildStatCard(
+                    "Total Present",
+                    "$present / $total",
+                    Icons.people,
+                    Colors.blue,
                   ),
-                )).toList()
-              ],
+
+                  const SizedBox(height: 15),
+
+                  // 🚻 GENDER ROW
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildStatCard(
+                          "Males",
+                          "$males",
+                          Icons.male,
+                          Colors.blueGrey,
+                        ),
+                      ),
+                      const SizedBox(width: 15),
+                      Expanded(
+                        child: _buildStatCard(
+                          "Females",
+                          "$females",
+                          Icons.female,
+                          Colors.pinkAccent,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 25),
+                  const Text(
+                    "CLASS BREAKDOWN",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 🏫 CLASS LIST
+                  ...classes.entries.map(
+                    (e) => Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.class_, color: Colors.green),
+                        title: Text(e.key),
+                        trailing: Text(
+                          "${e.value}",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-        ),
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
+        ],
       ),
       child: Column(
         children: [
           Icon(icon, size: 40, color: color),
           const SizedBox(height: 10),
-          Text(value, style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: color)),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
           Text(title, style: const TextStyle(color: Colors.grey)),
         ],
       ),

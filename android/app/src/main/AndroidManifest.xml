@@ -6,12 +6,12 @@
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
-    <uses-feature android:name="android.hardware.nfc" android:required="true" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
 
     <application
-        android:label="Sub Zero"
+        android:label="Njelele Gate"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/launcher_icon">
         
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
@@ -23,9 +23,7 @@
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-            
-            android:hardwareAccelerated="false" 
-            
+            android:hardwareAccelerated="true" 
             android:windowSoftInputMode="adjustResize">
             
             <meta-data
