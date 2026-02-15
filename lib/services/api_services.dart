@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart'; // ✅ Added for debugPrint
 import 'package:http/http.dart' as http;
 import '../models/gate_response.dart';
 
@@ -8,13 +9,16 @@ class ApiService {
   static String gateUrl = "$_domain/gate";
 
   // ==================================================
-  // ⚡ ONLINE MODE TAP (Direct to Server)
+  // ⚡ ONLINE MODE TAP (Now with Status for Harmony)
   // ==================================================
-  static Future<GateResponse> handleTap(String nfcUid, String mode) async {
-    print("☁️ ONLINE TAP: Sending $nfcUid to server...");
+  static Future<GateResponse> handleTap(
+    String nfcUid,
+    String mode, {
+    String? status,
+  }) async {
+    debugPrint("☁️ ONLINE TAP: Sending $nfcUid to server...");
 
     try {
-      // 1. Send Request Directly
       final response = await http
           .post(
             Uri.parse(gateUrl),
@@ -23,19 +27,15 @@ class ApiService {
               "action": "TAP",
               "nfcUid": nfcUid,
               "mode": mode,
+              "status": status, // ✅ Now defined via the parameter!
               "timestamp": DateTime.now().toIso8601String(),
             }),
           )
-          .timeout(const Duration(seconds: 8)); // 8s Timeout for slow POS Net
+          .timeout(const Duration(seconds: 8));
 
-      // 2. Handle Server Response
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        // Convert JSON to our Model
-        return GateResponse.fromJson(data);
+        return GateResponse.fromJson(jsonDecode(response.body));
       } else {
-        // Server Error (500, 404, etc)
         return GateResponse(error: "Server Error: ${response.statusCode}");
       }
     } on TimeoutException {
@@ -90,11 +90,7 @@ class ApiService {
     }
   }
 
-  // 🗑️ DUMMY METHOD (To prevent breaking Stats Screen)
-  // Since we deleted OfflineService, the Stats screen will cry.
-  // We return empty stats for now.
   static Future<Map<String, dynamic>> getLiveStats() async {
-    // Optional: You could fetch these from the server if you have an endpoint
     return {
       "total_students": 0,
       "total_present": 0,

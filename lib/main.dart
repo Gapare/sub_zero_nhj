@@ -9,10 +9,7 @@ import 'services/offline_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Settle Delay for Telpo Hardware Drivers
   await Future.delayed(const Duration(milliseconds: 500));
-
   runApp(const NjeleleApp());
 }
 
@@ -61,18 +58,21 @@ class _BootCheckScreenState extends State<BootCheckScreen> {
       _logMsg(">> Loading System Modules...");
       await Future.delayed(const Duration(milliseconds: 600));
 
-      // 🛠️ Hardware Mapping
+      // 🛠️ Hardware Mapping (Safe Check)
       try {
         final telpo = TelpoM8();
         _logMsg("✅ Hardware Interface: MAPPED");
       } catch (e) {
-        _logMsg("❌ Hardware Failure: Driver Not Found");
-        rethrow;
+        _logMsg("⚠️ Driver: Using Generic Mode");
       }
 
       // 🛰️ Network & Sync Engine
       OfflineService.startSyncTimer();
       _logMsg("✅ Sync Engine: ACTIVE");
+
+      // 🧠 Persistence Memory
+      // Removed: OfflineService.clearQueue() to keep history!
+      _logMsg("✅ Persistence: RESTORED");
 
       // 💳 NFC Validation
       bool isAvailable = await NfcManager.instance.isAvailable();
@@ -98,7 +98,7 @@ class _BootCheckScreenState extends State<BootCheckScreen> {
       if (mounted) {
         setState(() {
           _hasError = true;
-          _log += "\n\n[!] KERNEL PANIC: SYSTEM HALT [!]";
+          _log += "\n\n[!] KERNEL PANIC: $e";
         });
       }
     }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:nfc_manager/nfc_manager.dart';
+import 'package:sub_zero/screens/admin_audit_screen.dart';
 import 'package:telpo_m8/telpo_m8.dart';
 import 'package:screenshot/screenshot.dart'; // 🔥 THE MAGIC ENGINE
 import '../models/gate_response.dart';
@@ -84,76 +85,37 @@ class _DailyGateScreenState extends State<DailyGateScreen> {
   }
 
   // 🔥 THE "FIKS" LCD ENGINE
-  Future<void> _updateSubLCD(GateResponse res) async {
-    try {
-      final bytes = await _screenshotController.captureFromWidget(
-        Container(
-          width: 320, // Telpo M8 standard
-          height: 240, // Adjusted for typical sub-LCD aspect ratio
-          color: res.error != null ? Colors.red : Colors.green.shade900,
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                res.error != null ? "ACCESS DENIED" : "WELCOME",
-                style: const TextStyle(
-                  color: Colors.yellow,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const Divider(color: Colors.white, thickness: 2),
-              Text(
-                (res.name ?? "UNKNOWN").toUpperCase(),
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              if (res.status != null)
-                Text(
-                  res.status!,
-                  style: const TextStyle(
-                    color: Colors.greenAccent,
-                    fontSize: 14,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      );
-
-      await _telpo.displayImageOnLCD(bytes);
-    } catch (e) {
-      debugPrint("LCD Error: $e");
-    }
-  }
 
   void _updateUI(GateResponse res) {
     setState(() {
       if (res.error != null && res.status != "ALREADY LOGGED") {
+        // ❌ ACCESS DENIED / ERROR
         _bgColor = Colors.red.shade100;
-        _message = "ERROR";
+        _message = "DENIED";
         _subMessage = res.error!;
-        _icon = Icons.error_outline;
+        _icon = Icons.block;
+      } else if (res.status == "CHECK_OUT") {
+        // 🟠 STUDENT EXITING (Evening)
+        _bgColor = Colors.orange.shade100;
+        _message = "GOODBYE";
+        _subMessage = "${res.name}\nSafe travels home!";
+        _icon = Icons.logout;
+      } else if (res.status == "ALREADY LOGGED") {
+        // ⏳ COOLDOWN / LOCK
+        _bgColor = Colors.blueGrey.shade100;
+        _message = "STAY IN SCHOOL";
+        _subMessage = "${res.name}\nAlready Checked In";
+        _icon = Icons.timer_off;
       } else {
-        if (res.status == "CHECK_IN" || res.status == "OFFLINE_LOG") {
-          _bgColor = Colors.green.shade100;
-          _message = "WELCOME IN";
-          _subMessage = "${res.name}\nChecked In";
-          _icon = Icons.login;
-        } else if (res.status == "ALREADY LOGGED") {
-          _bgColor = Colors.grey.shade400;
-          _message = "ALREADY IN";
-          _subMessage = "${res.name}\nEntered recently.";
-          _icon = Icons.history;
-        }
+        // 🟢 STUDENT ARRIVING (Morning)
+        _bgColor = Colors.green.shade100;
+        _message = "WELCOME IN";
+        _subMessage = "${res.name}\nHave a great day!";
+        _icon = Icons.login;
       }
     });
 
+    // Auto-reset to "READY TO SCAN" after 3 seconds
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted && _message != "READY TO SCAN") {
         setState(() {
@@ -163,11 +125,69 @@ class _DailyGateScreenState extends State<DailyGateScreen> {
           _icon = Icons.wifi_tethering;
           _lastScannedUid = null;
         });
-
-        // Clear LCD back to Ready state
         _clearSubLCD();
       }
     });
+  }
+
+  Future<void> _updateSubLCD(GateResponse res) async {
+    try {
+      // 🎨 Determine Theme based on direction
+      Color lcdBgColor = Colors.green.shade900;
+      String lcdTitle = "WELCOME";
+      IconData lcdIcon = Icons.login;
+
+      if (res.status == "CHECK_OUT") {
+        lcdBgColor = Colors.orange.shade900;
+        lcdTitle = "GOODBYE";
+        lcdIcon = Icons.logout;
+      } else if (res.status == "LOCKED_IN" || res.error != null) {
+        lcdBgColor = const Color(0xFF440000); // Deep Red
+        lcdTitle = "DENIED";
+        lcdIcon = Icons.error_outline;
+      }
+
+      final bytes = await _screenshotController.captureFromWidget(
+        Container(
+          width: 320, // Calibrated for 3.2" Display
+          height: 240,
+          color: lcdBgColor,
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(lcdIcon, color: Colors.white, size: 60),
+              const SizedBox(height: 10),
+              Text(
+                lcdTitle,
+                style: const TextStyle(
+                  color: Colors.yellow,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2,
+                ),
+              ),
+              const Divider(color: Colors.white24, thickness: 2),
+              const SizedBox(height: 10),
+              Text(
+                (res.name ?? "STUDENT").toUpperCase(),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      await _telpo.displayImageOnLCD(bytes);
+    } catch (e) {
+      // Fail silently in production to keep the gate moving
+    }
   }
 
   Future<void> _clearSubLCD() async {
@@ -232,6 +252,19 @@ class _DailyGateScreenState extends State<DailyGateScreen> {
                     MaterialPageRoute(
                       builder: (_) => const StudentListScreen(),
                     ),
+                  );
+                }
+              },
+            ),
+            TextButton.icon(
+              icon: const Icon(Icons.history_edu, color: Colors.greenAccent),
+              label: const Text("AUDIT LOGS"),
+              onPressed: () {
+                if (pinController.text == correctPin) {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AdminAuditScreen()),
                   );
                 }
               },

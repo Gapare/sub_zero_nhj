@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_services.dart';
 
 class StatsScreen extends StatefulWidget {
@@ -18,11 +21,61 @@ class _StatsScreenState extends State<StatsScreen> {
     _loadStats();
   }
 
-  void _loadStats() async {
+  Future<void> _loadStats() async {
     setState(() => _isLoading = true);
-    //final data = await OfflineService.getLiveStats();
+
+    final prefs = await SharedPreferences.getInstance();
+
+    // 1. Get total student count
+    String? studentData = prefs.getString("local_students");
+    List<dynamic> allStudents = studentData != null
+        ? jsonDecode(studentData)
+        : [];
+    int total = allStudents.length;
+
+    // 2. Get Today's Taps from local cache
+    List<String> pending = prefs.getStringList("pending_taps") ?? [];
+    String today = DateTime.now().toIso8601String().split('T')[0];
+
+    // 3. Calculate Present Students (Unique UIDs from today)
+    Set<String> presentUids = {};
+    int males = 0;
+    int females = 0;
+    Map<String, int> classStats = {};
+
+    for (var tapJson in pending) {
+      var tap = jsonDecode(tapJson);
+      // Only count if it's a CHECK_IN from today
+      if (tap['timestamp'].startsWith(today) && tap['status'] == "CHECK_IN") {
+        presentUids.add(tap['nfcUid']);
+      }
+    }
+
+    // 4. Cross-reference with Student Data for Gender/Class info
+    for (String uid in presentUids) {
+      final s = allStudents.firstWhere(
+        (std) => std['rfidUid'] == uid,
+        orElse: () => null,
+      );
+      if (s != null) {
+        // Gender logic
+        if (s['sex']?.toString().toUpperCase() == "M") males++;
+        if (s['sex']?.toString().toUpperCase() == "F") females++;
+
+        // Class logic
+        String className = s['class'] ?? "Unknown";
+        classStats[className] = (classStats[className] ?? 0) + 1;
+      }
+    }
+
     setState(() {
-      _stats = {};
+      _stats = {
+        'total_students': total,
+        'total_present': presentUids.length,
+        'males_present': males,
+        'females_present': females,
+        'class_breakdown': classStats,
+      };
       _isLoading = false;
     });
   }
