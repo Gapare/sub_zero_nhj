@@ -22,9 +22,13 @@ class NjeleleApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Njelele Gate Pro',
       theme: ThemeData(
-        primarySwatch: Colors.green,
         useMaterial3: true,
-        brightness: Brightness.light,
+        fontFamily: 'Inter',
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF0E5E3A),
+          primary: const Color(0xFF0E5E3A),
+          surface: const Color(0xFFF5F7F6), // ✅ Fixed deprecation
+        ),
       ),
       home: const BootCheckScreen(),
     );
@@ -38,142 +42,182 @@ class BootCheckScreen extends StatefulWidget {
   State<BootCheckScreen> createState() => _BootCheckScreenState();
 }
 
-class _BootCheckScreenState extends State<BootCheckScreen> {
-  String _log = ">> FIKS_OS KERNEL INITIALIZED\n>> AUTHOR: ENGINEER GAPARE E.";
+class _BootCheckScreenState extends State<BootCheckScreen>
+    with TickerProviderStateMixin {
+  late AnimationController _fadeController;
+  late Animation<double> _fadeIn;
+
+  String _statusMessage = "Initializing secure services...";
   bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _fadeIn = CurvedAnimation(parent: _fadeController, curve: Curves.easeIn);
+
+    _fadeController.forward();
     _performSystemCheck();
   }
 
-  void _logMsg(String msg) {
-    if (!mounted) return;
-    setState(() => _log += "\n$msg");
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    super.dispose();
   }
 
   Future<void> _performSystemCheck() async {
     try {
-      _logMsg(">> Loading System Modules...");
-      await Future.delayed(const Duration(milliseconds: 600));
+      await Future.delayed(const Duration(milliseconds: 800));
 
-      // 🛠️ Hardware Mapping (Safe Check)
+      // ✅ Removed unnecessary 'await' on TelpoM8 constructor
       try {
-        final telpo = TelpoM8();
-        _logMsg("✅ Hardware Interface: MAPPED");
-      } catch (e) {
-        _logMsg("⚠️ Driver: Using Generic Mode");
-      }
+        TelpoM8();
+      } catch (_) {}
 
-      // 🛰️ Network & Sync Engine
       OfflineService.startSyncTimer();
-      _logMsg("✅ Sync Engine: ACTIVE");
 
-      // 🧠 Persistence Memory
-      // Removed: OfflineService.clearQueue() to keep history!
-      _logMsg("✅ Persistence: RESTORED");
-
-      // 💳 NFC Validation
-      bool isAvailable = await NfcManager.instance.isAvailable();
-      _logMsg(isAvailable ? "✅ NFC Module: ONLINE" : "⚠️ NFC Module: OFFLINE");
-
-      // 🧠 Database Integrity
-      _logMsg(">> Synchronizing Local Brain...");
+      if (mounted) setState(() => _statusMessage = "Syncing local database...");
       await OfflineService.autoSync();
-      _logMsg("✅ Database: READY");
 
-      _logMsg("\n>> BOOT SEQUENCE SUCCESSFUL.");
-      _logMsg(">> STARTING NJELELE_PRO UI...");
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (mounted) setState(() => _statusMessage = "Access control ready.");
 
       await Future.delayed(const Duration(seconds: 1));
 
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const MainNavigation()),
+          PageRouteBuilder(
+            transitionDuration: const Duration(milliseconds: 800),
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                const MainNavigation(), // ✅ Fixed underscores
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) =>
+                    FadeTransition(opacity: animation, child: child),
+          ),
         );
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-          _log += "\n\n[!] KERNEL PANIC: $e";
-        });
-      }
+      if (mounted) setState(() => _hasError = true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    const primaryGreen = Color(0xFF0E5E3A);
+    const softText = Color(0xFF6B7280);
+
     return Scaffold(
-      backgroundColor: _hasError
-          ? const Color(0xFF1A0000)
-          : const Color(0xFF0A0A0A),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
+      backgroundColor: const Color(0xFFF5F7F6),
+      body: Center(
+        child: FadeTransition(
+          opacity: _fadeIn,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                _hasError ? "HALT: BOOT_FAILURE" : "NJELELE SYSTEM V1.0",
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(
+                        alpha: 0.05,
+                      ), // ✅ Fixed deprecation
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.account_balance,
+                  size: 50,
+                  color: primaryGreen,
+                ),
+              ),
+              const SizedBox(height: 30),
+              const Text(
+                "NJELELE HIGH SCHOOL",
                 style: TextStyle(
-                  color: _hasError ? Colors.redAccent : Colors.greenAccent,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                  letterSpacing: 2.0,
+                  color: Color(0xFF1C1C1C),
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
                 ),
               ),
-              const SizedBox(height: 25),
-              Expanded(
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.black,
-                    border: Border.all(
-                      color: _hasError
-                          ? Colors.red
-                          : Colors.greenAccent.withOpacity(0.3),
-                    ),
-                  ),
-                  child: SingleChildScrollView(
-                    child: Text(
-                      _log,
-                      style: const TextStyle(
-                        color: Colors.greenAccent,
-                        fontFamily: 'monospace',
-                        fontSize: 13,
-                        height: 1.6,
-                      ),
-                    ),
-                  ),
+              const Text(
+                "Access Control System",
+                style: TextStyle(
+                  color: softText,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: 0.5,
                 ),
               ),
+              const SizedBox(height: 60),
               if (_hasError)
-                Padding(
-                  padding: const EdgeInsets.only(top: 20),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red.shade900,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _hasError = false;
-                          _log = ">> REBOOTING KERNEL...";
-                        });
-                        _performSystemCheck();
-                      },
+                Column(
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: Colors.redAccent,
+                      size: 30,
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      "System Halt: Driver Conflict",
+                      style: TextStyle(color: Colors.redAccent),
+                    ),
+                    TextButton(
+                      onPressed: () => _performSystemCheck(),
                       child: const Text(
-                        "RETRY KERNEL BOOT",
-                        style: TextStyle(color: Colors.white),
+                        "RETRY INITIALIZATION",
+                        style: TextStyle(color: primaryGreen),
                       ),
                     ),
+                  ],
+                )
+              else
+                Column(
+                  children: [
+                    const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(primaryGreen),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      _statusMessage,
+                      style: const TextStyle(
+                        color: softText,
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
+              const SizedBox(height: 100),
+              const Opacity(
+                opacity: 0.5,
+                child: Text(
+                  "POWERED BY THE JACKAL SYSTEMS",
+                  style: TextStyle(
+                    color: primaryGreen,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 2.0,
                   ),
                 ),
+              ),
             ],
           ),
         ),
@@ -182,6 +226,7 @@ class _BootCheckScreenState extends State<BootCheckScreen> {
   }
 }
 
+// ✅ RESTORED MainNavigation Class
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
   @override
@@ -203,7 +248,7 @@ class _MainNavigationState extends State<MainNavigation> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
-        selectedItemColor: Colors.green[800],
+        selectedItemColor: const Color(0xFF0E5E3A),
         unselectedItemColor: Colors.grey.shade600,
         backgroundColor: Colors.white,
         elevation: 20,

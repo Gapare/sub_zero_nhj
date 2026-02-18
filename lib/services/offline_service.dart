@@ -44,7 +44,7 @@ class OfflineService {
     if (data == null) return GateResponse(error: "Sync Database First");
     List<dynamic> students = jsonDecode(data);
     final student = students.firstWhere(
-      (s) => s['rfidUid'] == uid,
+      (s) => s['rfidUid']?.toString().toLowerCase() == uid.toLowerCase(),
       orElse: () => null,
     );
     if (student == null) return GateResponse(error: "Card Not Registered");
@@ -296,5 +296,47 @@ class OfflineService {
       }
     });
     await prefs.setStringList(_pendingKey, pending);
+  }
+
+  // ==================================================
+  // 🧠 OFFLINE IDENTITY & FEES (THE LOCAL BRAIN)
+  // ==================================================
+  static Future<GateResponse> whoAmIOffline(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    String? data = prefs.getString(_studentKey);
+
+    if (data == null) {
+      return GateResponse(error: "Registry Empty. Please Sync Online First.");
+    }
+
+    List<dynamic> students = jsonDecode(data);
+
+    // 🕵️‍♂️ Forensic Case-Insensitive Lookup
+    final student = students.firstWhere(
+      (s) => s['rfidUid']?.toString().toLowerCase() == uid.toLowerCase(),
+      orElse: () => null,
+    );
+
+    if (student == null) {
+      return GateResponse(error: "Card Not Registered");
+    }
+
+    // 💰 Handle Fees (Pulling from the synced student object)
+    // Note: Ensure your Next.js sync API includes balance, parent, and class info
+    double balance = (student['balance'] as num?)?.toDouble() ?? 0.0;
+
+    return GateResponse(
+      name: "${student['name']} ${student['surname']}",
+      className: student['class']?['fullName'] ?? "N/A",
+      parentName: student['parent'] != null
+          ? "${student['parent']['name']} ${student['parent']['surname']}"
+          : "N/A",
+      parentPhone: student['parent']?['phone'] ?? "N/A",
+      balance: balance,
+      img: student['img'],
+      rfidUid: uid,
+      sex: student['sex'],
+      isOffline: true, // Mark as local data
+    );
   }
 }

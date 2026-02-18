@@ -56,34 +56,39 @@ class _DailyGateScreenState extends State<DailyGateScreen> {
             tag.data['mifare']?['identifier'];
         if (id == null) return;
 
-        String uid = List<int>.from(
-          id,
-        ).map((e) => e.toRadixString(16).padLeft(2, '0')).join(':');
+        // 🕵️‍♂️ Standard Jackal Formatting (Lowercase + Colons)
+        String uid = List<int>.from(id)
+            .map((e) => e.toRadixString(16).padLeft(2, '0'))
+            .join(':')
+            .toLowerCase();
 
         if (uid == _lastScannedUid || _isProcessing) return;
-        _isProcessing = true;
+
+        setState(() {
+          _isProcessing = true;
+          _message = "VERIFYING...";
+        });
 
         try {
+          // 🚀 ACTION: Run the Attendance Logic (Check history, time, and toggle status)
           final res = await OfflineService.handleLocalTap(uid, "PRIVACY");
 
           if (!mounted) return;
           _lastScannedUid = uid;
 
-          // 1. Update Main Screen
-          _updateUI(res);
+          _updateUI(res); // Update main phone UI
+          _updateSubLCD(res); // Update student-facing screen
 
-          // 2. 🔥 Update Sub-LCD via Screenshot
-          _updateSubLCD(res);
-
+          // Heartbeat sync to Vercel
           OfflineService.syncPendingTaps();
-        } catch (_) {
+        } catch (e) {
+          debugPrint("Gate System Error: $e");
         } finally {
-          _isProcessing = false;
+          if (mounted) setState(() => _isProcessing = false);
         }
       },
     );
   }
-
   // 🔥 THE "FIKS" LCD ENGINE
 
   void _updateUI(GateResponse res) {

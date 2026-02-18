@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:nfc_manager/nfc_manager.dart';
 import '../models/gate_response.dart';
 import '../services/api_services.dart';
+import '../services/offline_service.dart';
 
 class IdentityScreen extends StatefulWidget {
   const IdentityScreen({super.key});
@@ -15,7 +16,9 @@ class _IdentityScreenState extends State<IdentityScreen> {
   String _name = "...";
   String _details = "";
   String? _imgUrl;
-  
+
+  double? _feeBalance;
+
   Color _bgColor = Colors.blue.shade50;
   bool _isProcessing = false;
   String? _lastScannedUid;
@@ -31,27 +34,34 @@ class _IdentityScreenState extends State<IdentityScreen> {
 
     NfcManager.instance.startSession(
       onDiscovered: (NfcTag tag) async {
-        // 3.5.0 Logic
-        var id = tag.data['nfca']?['identifier'] ?? tag.data['mifare']?['identifier'];
+        var id =
+            tag.data['nfca']?['identifier'] ??
+            tag.data['mifare']?['identifier'];
         if (id == null) return;
 
         String uid = List<int>.from(id)
             .map((e) => e.toRadixString(16).padLeft(2, '0'))
-            .join(':');
+            .join(':')
+            .toLowerCase();
 
         if (uid == _lastScannedUid) return;
         if (_isProcessing) return;
-        _isProcessing = true;
+
+        setState(() {
+          _isProcessing = true;
+          _status = "IDENTIFYING...";
+        });
 
         try {
-          // Use the WHOAMI action
-          final res = await ApiService.whoAmI(uid);
+          final res = await OfflineService.whoAmIOffline(uid);
+
           if (!mounted) return;
           _lastScannedUid = uid;
           _updateUI(res);
-        } catch (_) {
+        } catch (e) {
+          _updateUI(GateResponse(error: "Server Timeout"));
         } finally {
-          _isProcessing = false;
+          setState(() => _isProcessing = false);
         }
       },
     );
@@ -65,24 +75,23 @@ class _IdentityScreenState extends State<IdentityScreen> {
         _name = "Not Registered";
         _details = "";
         _imgUrl = null;
+        _feeBalance = null;
       } else {
         _bgColor = Colors.white;
         _status = "IDENTIFIED";
         _name = res.name ?? "Student";
         _imgUrl = res.img;
-        
-        // Build the rich details string
+
         List<String> info = [];
         if (res.className != null) info.add("Class: ${res.className}");
         if (res.parentName != null) info.add("Parent: ${res.parentName}");
         if (res.parentPhone != null) info.add("Phone: ${res.parentPhone}");
-        
-        // Add Fee Warning if owing
+
         if (res.balance != null && res.balance! > 0) {
-           _bgColor = Colors.orange.shade50; // Warn color
-           info.add("\n⚠️ OWING: \$${res.balance?.toStringAsFixed(2)}");
+          _bgColor = Colors.orange.shade50;
+          _feeBalance = res.balance;
         } else {
-           info.add("\n✅ Fees Cleared");
+          _feeBalance = 0.0;
         }
 
         _details = info.join("\n");
@@ -93,48 +102,138 @@ class _IdentityScreenState extends State<IdentityScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bgColor,
+      backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
-        title: const Text("IDENTITY CHECK", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.w900)),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        title: const Text(
+          "Identity Verification",
+          style: TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.5),
+        ),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        elevation: 1,
         centerTitle: true,
       ),
       body: Center(
         child: Container(
           width: MediaQuery.of(context).size.width * 0.85,
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20)],
-            border: _bgColor == Colors.orange.shade50 
-                ? Border.all(color: Colors.orange, width: 2) 
-                : null
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black12,
+                blurRadius: 15,
+                offset: Offset(0, 5),
+              ),
+            ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               CircleAvatar(
-                radius: 60,
-                backgroundColor: Colors.blue.shade50,
-                backgroundImage: _imgUrl != null ? NetworkImage(_imgUrl!) : null,
-                child: _imgUrl == null ? const Icon(Icons.person, size: 60, color: Colors.blue) : null,
+                radius: 55,
+                backgroundColor: Colors.grey.shade200,
+                backgroundImage: _imgUrl != null
+                    ? NetworkImage(_imgUrl!)
+                    : null,
+                child: _imgUrl == null
+                    ? const Icon(Icons.person, size: 50, color: Colors.grey)
+                    : null,
               ),
+
               const SizedBox(height: 20),
-              Text(_status, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
-              const SizedBox(height: 10),
-              Text(_name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 15),
-              if (_details.isNotEmpty)
+
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: _status == "IDENTIFIED"
+                      ? Colors.green.shade50
+                      : _status == "UNKNOWN CARD"
+                      ? Colors.red.shade50
+                      : Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _status,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: _status == "IDENTIFIED"
+                        ? Colors.green
+                        : _status == "UNKNOWN CARD"
+                        ? Colors.red
+                        : Colors.blue,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              Text(
+                _name,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+
+              const SizedBox(height: 18),
+
+              if (_details.isNotEmpty || _feeBalance != null)
                 Container(
-                  padding: const EdgeInsets.all(15),
+                  padding: const EdgeInsets.all(16),
                   width: double.infinity,
                   decoration: BoxDecoration(
                     color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
                   ),
-                  child: Text(_details, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, height: 1.5)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_details.isNotEmpty)
+                        Text(
+                          _details,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            height: 1.6,
+                            color: Colors.black87,
+                          ),
+                        ),
+
+                      if (_feeBalance != null) ...[
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Icon(
+                              _feeBalance! > 0
+                                  ? Icons.warning_amber_rounded
+                                  : Icons.check_circle_outline,
+                              color: _feeBalance! > 0
+                                  ? Colors.orange.shade700
+                                  : Colors.green.shade700,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _feeBalance! > 0
+                                  ? "OWING: \$${_feeBalance!.toStringAsFixed(2)}"
+                                  : "FEES CLEARED",
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: _feeBalance! > 0
+                                    ? Colors.orange.shade700
+                                    : Colors.green.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
             ],
           ),

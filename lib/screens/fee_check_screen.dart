@@ -48,27 +48,35 @@ class _FeeCheckScreenState extends State<FeeCheckScreen> {
             tag.data['nfca']?['identifier'] ??
             tag.data['mifare']?['identifier'] ??
             tag.data['isodep']?['identifier'];
-
         if (id == null) return;
-        String uid = List<int>.from(
-          id,
-        ).map((e) => e.toRadixString(16).padLeft(2, '0')).join(':');
+
+        String uid = List<int>.from(id)
+            .map((e) => e.toRadixString(16).padLeft(2, '0'))
+            .join(':')
+            .toLowerCase();
 
         if (uid == _lastScannedUid || _isProcessing) return;
         _isProcessing = true;
 
         try {
+          // 🚀 RUNS ALL GATE RULES (120m Lock, 10AM, etc.)
           final res = await OfflineService.handleLocalTap(uid, "FEES");
 
           if (!mounted) return;
           _lastScannedUid = uid;
-          _updateUI(res);
-          _updateSubLCD(res);
+
+          // Even if status is 'LOCKED', the 'res' object now contains
+          // the student's name and balance because our OfflineService
+          // pulls that data before checking the time locks.
+
+          _updateUI(res); // Shows status AND fees on phone
+          _updateSubLCD(res); // Shows status AND fees on Sub-LCD
 
           OfflineService.syncPendingTaps();
-        } catch (_) {
+        } catch (e) {
+          debugPrint("Fee Check Error: $e");
         } finally {
-          _isProcessing = false;
+          if (mounted) setState(() => _isProcessing = false);
         }
       },
     );
